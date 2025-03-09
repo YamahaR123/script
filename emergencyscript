@@ -246,7 +246,7 @@ local function teleportToRandomSmallServer()
         return
     end
 
-    game.Players.LocalPlayer:Kick("Made By qwertyqxz. Looking for a new server :^")
+    game.Players.LocalPlayer:Kick("Made By Redwine :D. Looking for a new server :^")
 
     while true do
         if httprequest then
@@ -372,7 +372,7 @@ local function AntiFallDamage()
 end
 
 local function checkServerVersion()
-    local searchText = "3.8.4"
+    local searchText = "3.9.5"
 
     for _, instance in pairs(game:GetDescendants()) do
         if instance:IsA("TextLabel") and string.find(instance.Text, searchText) then
