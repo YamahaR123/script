@@ -1,0 +1,813 @@
+
+repeat
+    task.wait()
+until game.Players.LocalPlayer and game.Players.LocalPlayer.Character and game.Players.LocalPlayer:FindFirstChild("PlayerGui")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local LocalPlayerGetService = game:GetService("Players").LocalPlayer
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local PlaceId = game.PlaceId
+local httprequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+local RunService = game:GetService("RunService")
+
+
+local seats = {
+    ["SafeZone"] = Vector3.new(-1405.209, 789.013, 3340.845),
+    ["Bank"] = Vector3.new(-1242.749, 7.750, 3136.223),
+    ["BankROB"] = Vector3.new(-1235.392, 7.750, 3101.996),
+    ["Club"] = Vector3.new(-1744.188, 11.125, 3013.181),
+    ["ContainerOne"] = Vector3.new(1130.723, 28.696, 2328.260),
+    ["ContainerOneROB"] = Vector3.new(1140.876, 30.227, 2316.757),
+    ["ContainerTwo"] = Vector3.new(1154.452, 28.696, 2158.109),
+    ["ContainerTwoROB"] = Vector3.new(1141.696, 29.363, 2166.917),
+    ["ContainerOneSAFE"] = Vector3.new(1151.156, 28.696, 2307.564),
+    ["ContainerTwoSAFE"] = Vector3.new(1129.354, 28.696, 2172.798)
+}
+
+local function createHollowBox(position, size)
+    if not position or not size then
+        error("Position or size is nil. Please provide valid arguments.")
+        return
+    end
+
+    local thickness = 1
+
+    local floor = Instance.new("Part")
+    floor.Name = "SafeZoneFloor"
+    floor.Size = Vector3.new(size.X, thickness, size.Z)
+    floor.Position = position - Vector3.new(0, size.Y / 2, 0)
+    floor.Anchored = true
+    floor.BrickColor = BrickColor.Black()
+    floor.CanCollide = true
+    floor.Parent = Workspace
+
+    local ceiling = Instance.new("Part")
+    ceiling.Name = "SafeZoneCeiling"
+    ceiling.Size = Vector3.new(size.X, thickness, size.Z)
+    ceiling.Position = position + Vector3.new(0, size.Y / 2, 0)
+    ceiling.Anchored = true
+    ceiling.BrickColor = BrickColor.Black()
+    ceiling.CanCollide = true
+    ceiling.Parent = Workspace
+
+    local wallPositions = {
+        Vector3.new(size.X / 2, 0, 0),
+        Vector3.new(-size.X / 2, 0, 0),
+        Vector3.new(0, 0, size.Z / 2),
+        Vector3.new(0, 0, -size.Z / 2)
+    }
+
+    for i, offset in ipairs(wallPositions) do
+        local wall = Instance.new("Part")
+        wall.Name = "SafeZoneWall" .. i
+        wall.Size = Vector3.new(
+            i <= 2 and thickness or size.X,
+            size.Y,
+            i > 2 and thickness or size.Z
+        )
+        wall.Position = position + offset
+        wall.Anchored = true
+        wall.BrickColor = BrickColor.Black()
+        wall.CanCollide = true
+        wall.Parent = Workspace
+    end
+end
+
+
+createHollowBox(Vector3.new(-1405.209, 789.013, 3340.845), Vector3.new(12, 12, 12))
+
+local function isPlayerStable()
+    local character = game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()
+    if not character then
+        return false
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+
+    if not humanoid or not rootPart then
+        return false
+    end
+
+    local velocity = rootPart.Velocity
+    local isVelocityStable = math.abs(velocity.X) < 0.1 and math.abs(velocity.Y) < 0.1 and math.abs(velocity.Z) < 0.1
+
+    local stableStates = {
+        [Enum.HumanoidStateType.Running] = true,
+        [Enum.HumanoidStateType.Physics] = true,
+        [Enum.HumanoidStateType.Seated] = true,
+        [Enum.HumanoidStateType.None] = true
+    }
+    local isStateStable = stableStates[humanoid:GetState()]
+
+    return isVelocityStable and isStateStable
+end
+
+local function createSeat(name, position)
+    local seat = Instance.new("Seat")
+    seat.Name = name
+    seat.Position = position
+    seat.Anchored = true
+    seat.Transparency = 1
+    seat.CanCollide = false
+    seat.Parent = Workspace
+end
+
+for name, position in pairs(seats) do
+    createSeat(name, position)
+end
+
+local function teleportTo(locationName)
+    local seat = Workspace:FindFirstChild(locationName)
+    if not seat or not seat:IsA("Seat") then
+        return
+    end
+
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+
+    if not humanoid or not rootPart then
+        return
+    end
+
+    local targetPosition = seat.Position
+
+    local function getDistance(pos1, pos2)
+        return (pos1 - pos2).Magnitude
+    end
+
+    local function standUp()
+        humanoid.Sit = false
+        task.wait(1)
+    end
+
+    local attempts = 0
+    local maxAttempts = 3
+
+    local function retryTeleport()
+        local currentPosition = rootPart.Position
+        local distance = getDistance(currentPosition, targetPosition)
+
+        if distance > 25 then
+            humanoid.Sit = true
+            character:PivotTo(seat.CFrame)
+            wait(1.5)
+            humanoid.Sit = false
+        else 
+            if distance > 5 then
+            standUp()
+            rootPart.CFrame = CFrame.new(targetPosition)
+            wait(1)
+            end
+        end
+
+        local newDistance = getDistance(rootPart.Position, targetPosition)
+        if newDistance > 7 then
+            if attempts < maxAttempts then
+                attempts += 1
+                retryTeleport()
+            else
+            end
+        else
+        end
+    end
+
+    retryTeleport()
+end
+
+local function monitorHealth()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return
+    end
+
+    humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+        local healthPercentage = (humanoid.Health / humanoid.MaxHealth) * 100
+        if healthPercentage < 30 then
+            task.spawn(function()
+                for _, connection in pairs(getconnections(game:GetService("RunService").Stepped)) do
+                    connection:Disable()
+                end
+            end)
+            
+            teleportTo("SafeZone")
+
+            task.wait(3)
+
+            teleportToRandomSmallServer()
+        end
+    end)
+end
+
+local function isSafeFromPolice()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Team and player.Team.Name == "Police" and player.Character then
+            local officerPosition = player.Character:FindFirstChild("HumanoidRootPart")
+            local playerPosition = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if officerPosition and playerPosition then
+                local distance = (officerPosition.Position - playerPosition.Position).Magnitude
+                if distance < 350 then
+                    return false
+                end
+            end
+        end
+    end
+    return true
+end
+
+local function isNearSafeZone()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if rootPart then
+        local safeZone = Workspace:FindFirstChild("SafeZone")
+        if safeZone then
+            local distance = (rootPart.Position - safeZone.Position).Magnitude
+            return distance < 20
+        end
+    end
+    return false
+end
+
+local function teleportToRandomSmallServer()
+    local cursor = nil
+    local retryDelay = 2
+
+    if not isNearSafeZone() then
+        return
+    end
+    if not isSafeFromPolice() then
+        return
+    end
+
+    game.Players.LocalPlayer:Kick("Made By qwertyqxz. Looking for a new server :^")
+
+    while true do
+        if httprequest then
+            local servers = {}
+            local success, req = pcall(function()
+                return httprequest({Url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true", PlaceId)})
+            end)
+
+            if success and req then
+                local body = HttpService:JSONDecode(req.Body)
+
+                if body and body.data then
+                    for _, v in ipairs(body.data) do
+                        if type(v) == "table" and tonumber(v.playing) and tonumber(v.maxPlayers) and v.playing < v.maxPlayers and v.id ~= JobId then
+                            table.insert(servers, 1, v.id)
+                        end
+                    end
+                end
+            else
+            end
+
+            if #servers > 0 then
+                TeleportService:TeleportToPlaceInstance(PlaceId, servers[math.random(1, #servers)], Players.LocalPlayer)
+                return
+            else
+            end
+        else
+            return
+        end
+
+        task.wait(retryDelay)
+    end
+end
+
+
+
+local function waitForCitizenTeam()
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+
+    while true do
+        if LocalPlayer.Team and LocalPlayer.Team.Name == "Citizen" then
+            break
+        end
+        task.wait(5)
+    end
+end
+
+local function holdBomb()
+    local args = {
+        "Bomb"
+    }
+    game:GetService("ReplicatedStorage"):WaitForChild("1DK"):WaitForChild("c57c96f6-c598-443e-95ed-9416d4f3f8fa"):FireServer(unpack(args))
+end
+
+local function placeBomb()
+    local args = { 
+        [1] = LocalPlayerGetService.Character:FindFirstChild("Bomb") 
+    }
+    ReplicatedStorage:WaitForChild("1DK"):WaitForChild("438bbc40-96dd-44ca-9df5-1f9b6c7d68e6"):FireServer(unpack(args))
+end
+
+local function explodeBomb()
+    game:GetService("ReplicatedStorage"):WaitForChild("1DK"):WaitForChild("8446da40-c9f3-4c1e-b10c-98d2195e38f8"):FireServer()
+end
+
+local function faceDirection(number)
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    humanoidRootPart.CFrame = CFrame.new(humanoidRootPart.Position) * CFrame.Angles(0, math.rad(number), 0)
+end
+
+local function countBombs()
+    local bombTool
+    for _, child in pairs(PlayerGui:GetDescendants()) do
+        if child.Name == "Bomb" then
+            bombTool = child
+            break
+        end
+    end
+
+    if not bombTool then
+        return 0
+    end
+
+    local potentialParent = bombTool.Parent and bombTool.Parent.Parent
+    local bombTextLabel = potentialParent and potentialParent:FindFirstChild("4")
+
+    if not bombTextLabel or not bombTextLabel:IsA("TextLabel") then
+        return 1
+    end
+
+    if not bombTextLabel.Visible then
+        return 1
+    end
+
+    local bombCount = tonumber(bombTextLabel.Text) or 1
+    return bombCount
+end
+
+local function hasGold()
+    for _, child in pairs(PlayerGui:GetDescendants()) do
+        if child.Name == "Gold" then
+            return true
+        end
+    end
+    return false
+end
+
+local function AntiFallDamage()
+    local nofall
+    nofall = game:GetService("RunService").RenderStepped:Connect(function()
+        if workspace:Raycast(game.Players.LocalPlayer.Character.HumanoidRootPart.Position, Vector3.new(0, -20, 0)).Instance ~= nil and game.Players.LocalPlayer.Character.HumanoidRootPart.Velocity.Y < -30 then
+            game.Players.LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+        end
+    end)
+
+    return function()
+        if nofall then
+            nofall:Disconnect()
+        end
+    end
+end
+
+local function checkServerVersion()
+    local searchText = "3.8.4"
+
+    for _, instance in pairs(game:GetDescendants()) do
+        if instance:IsA("TextLabel") and string.find(instance.Text, searchText) then
+            return true
+        end
+    end
+
+    game.Players.LocalPlayer:Kick("Invalid Server version, If EH Updated to 3.9.5 then wait for an update.")
+    task.wait(5)
+    teleportToRandomSmallServer()
+end
+
+local function getNearestDealer()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    local nearestDealer, shortestDistance = nil, math.huge
+
+    for _, dealer in ipairs(Workspace.Dealers:GetChildren()) do
+        local dealerHead = dealer:FindFirstChild("Head")
+        if dealerHead then
+            local distance = (dealerHead.Position - humanoidRootPart.Position).Magnitude
+            if distance < shortestDistance then
+                nearestDealer = dealerHead
+                shortestDistance = distance
+            end
+        end
+    end
+
+    return nearestDealer, shortestDistance
+end
+
+local function buyBombs()
+    local nearestDealer, distance = getNearestDealer()
+    if not nearestDealer then
+        return
+    end
+
+    createSeat("DealerSeat", nearestDealer.Position + Vector3.new(0, 3, 0))
+    teleportTo("DealerSeat")
+
+    local attempts = 0
+    while countBombs() < 4 and attempts < 10 do
+        local args = {"Bomb", "Dealer"}
+        ReplicatedStorage:WaitForChild("1DK"):WaitForChild("75239268-a968-4912-a573-3e237e3d6fd7"):FireServer(unpack(args))
+        wait(0.5)
+        attempts += 1
+    end
+
+    if countBombs() == 0 then
+    elseif countBombs() >= 1 then
+    end
+
+    teleportTo("SafeZone")
+end
+
+
+local function hasItem(itemName)
+    for _, child in pairs(PlayerGui:GetDescendants()) do
+        if child.Name == itemName then
+            return true
+        end
+    end
+    return false
+end
+
+local function sellGoldAndItems()
+    local nearestDealer, distance = getNearestDealer()
+    if not nearestDealer then
+        return
+    end
+
+    local dealerSeatName = "DealerSeat"
+    createSeat(dealerSeatName, nearestDealer.Position + Vector3.new(0, 3, 0))
+
+    teleportTo(dealerSeatName)
+
+    if hasGold() then
+        local args = {"Gold", "Dealer"}
+        ReplicatedStorage:WaitForChild("1DK"):WaitForChild("e7623e70-f43a-4b5d-853c-535887b9620f"):FireServer(unpack(args))
+        wait(0.5)
+    end
+
+    local itemsToCheck = {"Glock 17", "MP5", "M58B Shotgun", "M4 Carbine", "G36", "Bayonet", "Baseball Bat", "Metal Bat", "Machete"}
+
+    for _, itemName in pairs(itemsToCheck) do
+        if hasItem(itemName) then
+            local args = {itemName, "Dealer"}
+            ReplicatedStorage:WaitForChild("1DK"):WaitForChild("e7623e70-f43a-4b5d-853c-535887b9620f"):FireServer(unpack(args))
+            wait(0.5) 
+        end
+    end
+
+    buyBombs()
+
+    teleportTo("SafeZone")
+end
+
+local function reduceGraphics()
+    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+
+    local lighting = game:GetService("Lighting")
+    lighting.GlobalShadows = false
+    lighting.FogEnd = 9e9
+    lighting.Brightness = 0
+
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
+            obj:Destroy()
+        elseif obj:IsA("BasePart") then
+            obj.CastShadow = false
+        end
+    end
+
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player.Character then
+            for _, accessory in pairs(player.Character:GetDescendants()) do
+                if accessory:IsA("Accessory") or accessory:IsA("Hat") or accessory:IsA("Clothing") then
+                    accessory:Destroy()
+                end
+            end
+        end
+    end
+
+    if workspace:FindFirstChildOfClass("Terrain") then
+        local terrain = workspace:FindFirstChildOfClass("Terrain")
+        terrain.WaterWaveSize = 0
+        terrain.WaterWaveSpeed = 0
+        terrain.WaterReflectance = 0
+        terrain.WaterTransparency = 0
+    end
+
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Decal") or obj:IsA("Texture") then
+            obj:Destroy()
+        end
+    end
+end
+
+local function autoCollect()
+    local player = game.Players.LocalPlayer
+
+    for _, drop in pairs(workspace.Drops:GetChildren()) do
+        if drop.Name == player.Name then
+            local args = {drop, "LmW"}
+            game:GetService("ReplicatedStorage"):WaitForChild("1DK"):WaitForChild("2db68e53-e0af-471b-b3b6-f284ce598b84"):FireServer(unpack(args))
+
+            args = {drop, "0o0"}
+            game:GetService("ReplicatedStorage"):WaitForChild("1DK"):WaitForChild("2db68e53-e0af-471b-b3b6-f284ce598b84"):FireServer(unpack(args))
+        end
+    end
+
+    for _, item in pairs(workspace.Robberies:GetDescendants()) do
+        if item:IsA("BasePart") or item:IsA("MeshPart") then
+            local distance = (item.Position - player.Character.HumanoidRootPart.Position).Magnitude
+            if distance < 10 and item.Transparency == 0 then
+                local action = item.Parent.Name == "Money" and "LmW" or "MLd"
+                local args = {item, action}
+                game:GetService("ReplicatedStorage"):WaitForChild("1DK"):WaitForChild("2db68e53-e0af-471b-b3b6-f284ce598b84"):FireServer(unpack(args))
+            end
+        end
+    end
+end
+
+local function robPartOne()
+    teleportTo("Bank")
+    wait(1)
+    faceDirection(180)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1242.749, 7.750, 3136.223))
+    faceDirection(180)
+    holdBomb()
+    wait(0.5)
+    faceDirection(180)
+    placeBomb()
+    wait(0.5)
+    teleportTo("Club")
+    wait(1)
+    faceDirection(0)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1744.188, 11.125, 3013.181))
+    faceDirection(0)
+    holdBomb()
+    wait(0.5)
+    faceDirection(0)
+    placeBomb()
+    wait(0.5)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1750.106, 10.987, 3032.595))
+    explodeBomb()
+    wait(0.5)
+    teleportTo("BankROB")
+    autoCollect()
+    wait(1)
+    autoCollect()
+    wait(0.18)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1249.179, 7.750, 3101.787))
+    wait(0.18)
+    autoCollect()
+    wait(0.18)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1250.016, 7.750, 3120.558))
+    wait(0.18)
+    autoCollect()
+    wait(0.18)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1231.868, 7.750, 3124.132))
+    wait(0.18)
+    autoCollect()
+    wait(0.18)
+    teleportTo("Club")
+    autoCollect()
+    wait(1)
+    autoCollect()
+    wait(0.2)
+    teleportTo("SafeZone")
+end
+
+local function robBank()
+    teleportTo("Bank")
+    wait(1)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1242.749, 7.750, 3136.223))
+    holdBomb()
+    wait(0.5)
+    faceDirection(180)
+    wait(0.1)
+    placeBomb()
+    wait(0.5)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1223.987, 7.749, 3133.229))
+    wait(0.5)
+    explodeBomb()
+    wait(2.5)
+
+    local collectionPoints = {
+        Vector3.new(-1231.868, 7.750, 3124.132),
+        Vector3.new(-1250.016, 7.750, 3120.558),
+        Vector3.new(-1249.179, 7.750, 3101.787),
+        Vector3.new(-1235.392, 7.750, 3101.996)
+    }
+    for _, location in ipairs(collectionPoints) do
+        LocalPlayer.Character:PivotTo(CFrame.new(location))
+        wait(0.15)
+        autoCollect()
+        wait(0.25)
+    end
+    wait(0.25)
+    teleportTo("SafeZone")
+end
+
+local function robClub()
+    local clubRobSpot = Vector3.new(-1744.188, 11.125, 3013.181)
+    teleportTo("Club")
+    wait(1)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1744.188, 11.125, 3013.181))
+    wait(0.1)
+    faceDirection(0)
+    wait(0.1)
+    holdBomb()
+    wait(0.5)
+    placeBomb()
+    wait(0.5)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1750.106, 10.987, 3032.595))
+    explodeBomb()
+    wait(2.5)
+    LocalPlayer.Character:PivotTo(CFrame.new(-1744.188, 11.125, 3013.181))
+    wait(0.25)
+    autoCollect()
+    wait(0.5)
+    teleportTo("SafeZone")
+end
+
+local function checkContainerOne()
+    local barricade = Workspace:FindFirstChild("Robberies")
+    and Workspace.Robberies:FindFirstChild("ContainerRobberies")
+    and Workspace.Robberies.ContainerRobberies:FindFirstChild("ContainerRobbery")
+    and Workspace.Robberies.ContainerRobberies.ContainerRobbery:FindFirstChild("Barricade")
+
+if barricade then
+    for _, child in pairs(barricade:GetChildren()) do
+        if child:IsA("BasePart") and child.Transparency < 1 then
+            return false
+        end
+    end
+end
+
+return true
+end
+
+local function checkContainerTwo()
+    local containerRobbery = Workspace:FindFirstChild("Robberies")
+    and Workspace.Robberies:FindFirstChild("ContainerRobberies")
+    and Workspace.Robberies.ContainerRobberies:GetChildren()[2]
+
+if containerRobbery and containerRobbery:FindFirstChild("Barricade") then
+    local barricade = containerRobbery:FindFirstChild("Barricade")
+
+    for _, child in pairs(barricade:GetChildren()) do
+        if child:IsA("BasePart") and child.Transparency < 1 then
+            return false
+        end
+    end
+end
+
+return true
+end
+
+local function robContainerTwo()
+    teleportTo("ContainerTwo")
+    wait(1)
+    LocalPlayer.Character:PivotTo(CFrame.new(1154.452, 28.696, 2158.109))
+    faceDirection(122)
+    wait(0.1)
+    holdBomb()
+    wait(0.5)
+    placeBomb()
+    wait(0.5)
+    teleportTo("ContainerTwoSAFE")
+    wait(1)
+    explodeBomb()
+    wait(2.5)
+    LocalPlayer.Character:PivotTo(CFrame.new(1141.696, 29.363, 2166.917))
+    wait(0.25)
+    autoCollect()
+    wait(1)
+    teleportTo("SafeZone")
+end
+
+local function robContainerOne()
+    LocalPlayer.Character:PivotTo(CFrame.new(1130.723, 28.696, 2328.260))
+    faceDirection(315)
+    wait(0.1)
+    holdBomb()
+    wait(0.5)
+    placeBomb()
+    wait(0.5)
+    teleportTo("ContainerOneSAFE")
+    wait(1)
+    explodeBomb()
+    wait(2.5)
+    LocalPlayer.Character:PivotTo(CFrame.new(1140.876, 30.227, 2316.757))
+    wait(0.25)
+    autoCollect()
+    wait(1)
+    teleportTo("SafeZone")
+end
+
+local function containerPart()
+    teleportTo("ContainerOne")
+    wait(1)
+    LocalPlayer.Character:PivotTo(CFrame.new(1130.723, 28.696, 2328.260))
+    local containerOneAvailable = true
+    if not checkContainerOne() then
+        containerOneAvailable = false
+    end
+
+    local containerTwoAvailable = true
+    if not checkContainerTwo() then
+        containerTwoAvailable = false
+    end
+    if containerOneAvailable == false and containerTwoAvailable == false then
+        teleportTo("SafeZone")
+        return
+    end
+    if containerOneAvailable and containerTwoAvailable == false then
+        robContainerOne()
+    end
+    if containerOneAvailable == false and containerTwoAvailable then
+        robContainerTwo()
+    end
+    if containerOneAvailable and containerTwoAvailable then
+        LocalPlayer.Character:PivotTo(CFrame.new(1130.723, 28.696, 2328.260))
+        faceDirection(315)
+        wait(0.1)
+        holdBomb()
+        wait(0.5)
+        placeBomb()
+        wait(0.5)
+        explodeBomb()
+        teleportTo("ContainerTwo")
+        wait(1)
+        LocalPlayer.Character:PivotTo(CFrame.new(1154.452, 28.696, 2158.109))
+        faceDirection(122)
+        wait(0.1)
+        holdBomb()
+        wait(0.5)
+        placeBomb()
+        wait(0.5)
+        explodeBomb()
+        teleportTo("ContainerOneROB")
+        autoCollect()
+        LocalPlayer.Character:PivotTo(CFrame.new(1140.876, 30.227, 2316.757))
+        wait(1)
+        LocalPlayer.Character:PivotTo(CFrame.new(1140.876, 30.227, 2316.757))
+        autoCollect()
+        wait(0.2)
+        teleportTo("ContainerTwoROB")
+        autoCollect()
+        LocalPlayer.Character:PivotTo(CFrame.new(1141.696, 29.363, 2166.917))
+        wait(1)
+        LocalPlayer.Character:PivotTo(CFrame.new(1141.696, 29.363, 2166.917))
+        autoCollect()
+        wait(0.2)
+        teleportTo("SafeZone")
+    end
+end
+
+local function handleGoldAfterRobbery()
+    if hasGold() then
+        sellGoldAndItems()
+    else
+    end
+end
+
+waitForCitizenTeam()
+reduceGraphics()
+monitorHealth()
+AntiFallDamage()
+teleportTo("SafeZone")
+checkServerVersion()
+local bombCount = countBombs()
+if bombCount < 4 then
+    buyBombs()
+end
+
+local lightGreen = Workspace:WaitForChild("Robberies"):WaitForChild("BankRobbery"):FindFirstChild("LightGreen")
+local safeDoor = workspace:WaitForChild("Robberies"):WaitForChild("SafeRobbery"):WaitForChild("Safe"):WaitForChild("Door"):GetChildren()[3]
+if lightGreen and lightGreen.Color == Color3.fromRGB(73, 147, 0) then
+    local rotation = safeDoor.Orientation
+    if rotation == Vector3.new(0, 0, 0) then
+        robPartOne()
+    else
+        robBank()
+    end
+else 
+    if safeDoor and safeDoor:IsA("BasePart") then
+        local rotation = safeDoor.Orientation
+        if rotation == Vector3.new(0, 0, 0) then
+            robClub()
+        end
+    end
+end
+containerPart()
+handleGoldAfterRobbery()
+teleportToRandomSmallServer()
